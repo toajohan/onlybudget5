@@ -181,7 +181,7 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     String message = "Test envoyé — vous devriez recevoir une notification avec le son dans quelques secondes.";
     bool isError = false;
     try {
-      await PushService.instance.refresh();
+      await PushService.instance.registerDevice();
       final sent = await DataService.instance.sendTestPush();
       if (sent == 0) {
         isError = true;
