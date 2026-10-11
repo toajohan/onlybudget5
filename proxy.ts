@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-const ASSOCIE_ONLY_PREFIXES = ["/depenses", "/tresorerie", "/historique", "/equipe", "/parametres"];
+const ASSOCIE_ONLY_PREFIXES = ["/depenses", "/tresorerie", "/investissement", "/historique", "/equipe", "/parametres"];
 const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
 
 export async function proxy(request: NextRequest) {
