@@ -37,8 +37,6 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
 
-  assets:
-    - assets/sounds/cash_register.wav
 
   # Même police que le site (Inter) : un seul fichier variable (poids + optical size), référencé plusieurs fois
   # avec un `weight` différent — Flutter choisit l'instance correspondante dans le fichier variable à chaque fois.

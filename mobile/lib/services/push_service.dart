@@ -9,10 +9,9 @@ import '../models.dart';
 import 'api_client.dart';
 import 'data_service.dart';
 
-// A channel's sound is fixed once Android has created it: the first one was created while the sound file was
-// missing from release builds, so it is replaced by a new id rather than fixed in place.
-const String _channelId = 'onlybudget_activity_v2';
-const String _legacyChannelId = 'onlybudget_activity';
+// Android fixes a channel's sound once created, so changing the sound means a new channel id; older ones are deleted.
+const String _channelId = 'onlybudget_activity_v3';
+const List<String> _legacyChannelIds = ['onlybudget_activity', 'onlybudget_activity_v2'];
 const String _backgroundTask = 'onlybudget_check_notifications';
 
 final _plugin = FlutterLocalNotificationsPlugin();
@@ -27,7 +26,9 @@ Future<void> _ensureChannel() async {
     playSound: true,
   );
   final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-  await android?.deleteNotificationChannel(_legacyChannelId);
+  for (final id in _legacyChannelIds) {
+    await android?.deleteNotificationChannel(id);
+  }
   await android?.createNotificationChannel(channel);
 }
 
