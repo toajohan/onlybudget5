@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* "Braise" palette: near-black ground, dark tiles, red-orange -> maroon hero, amber glow, white pill actions. */
+:root {
+  --background: #0a0a0a;
+  --surface: #212121; /* cards and list rows */
+  --tile: #262626; /* tiles inside cards, secondary buttons, inputs */
+  --surface-hover: #303030;
+  --border: rgba(255, 255, 255, 0.08);
+  --foreground: #ffffff;
+  --muted: #a8a8a8;
+  --primary: #ffffff; /* main actions and active states are white pills */
+  --primary-hover: #e8e8e8;
+  --primary-foreground: #0a0a0a;
+  --ember: #f2803a; /* accent for small highlights (badges, chart) */
+  --ember-deep: #cf2b14;
+  --success: #5bd98a; /* gains */
+  --danger: #ff8a5b; /* expenses, errors, destructive actions */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-tile: var(--tile);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ember: var(--ember);
+  --color-ember-deep: var(--ember-deep);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--ember);
+  color: white;
+}
+
+* {
+  border-color: var(--border);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a;
+}
+
+/* Amber + maroon glow at the top of every screen, fading to black. */
+.app-glow {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 380px 300px at 92% 0, rgba(196, 110, 24, 0.72) 0%, rgba(196, 110, 24, 0) 100%),
+    radial-gradient(ellipse 340px 260px at 0 10px, rgba(128, 30, 12, 0.7) 0%, rgba(128, 30, 12, 0) 100%);
+  background-repeat: no-repeat;
+}
+@media (min-width: 768px) {
+  .app-glow {
+    background-image:
+      radial-gradient(ellipse 620px 320px at 88% 0, rgba(196, 110, 24, 0.55) 0%, rgba(196, 110, 24, 0) 100%),
+      radial-gradient(ellipse 520px 300px at 22% 0, rgba(128, 30, 12, 0.5) 0%, rgba(128, 30, 12, 0) 100%);
+  }
+}
+
+/* Big red-orange card (net profit, fees). White text stays on the darker part of the gradient. */
+.hero-card {
+  background:
+    radial-gradient(ellipse 260px 210px at 100% 0, rgba(250, 144, 66, 0.95) 0%, rgba(250, 144, 66, 0) 100%),
+    linear-gradient(165deg, #cf2b14 0%, #a21a0e 48%, #5c0f09 100%);
+}
+@media (min-width: 768px) {
+  .hero-card {
+    background:
+      radial-gradient(ellipse 380px 280px at 100% 0, rgba(250, 144, 66, 0.95) 0%, rgba(250, 144, 66, 0) 100%),
+      linear-gradient(165deg, #cf2b14 0%, #a21a0e 48%, #5c0f09 100%);
+  }
+}
+
+.tint-success {
+  background: linear-gradient(135deg, rgba(91, 217, 138, 0.14) 0%, var(--tile) 65%);
+}
+.tint-danger {
+  background: linear-gradient(135deg, rgba(255, 138, 91, 0.14) 0%, var(--tile) 65%);
+}
+.ember-gradient {
+  background: linear-gradient(135deg, #d9451f 0%, #8c1a0c 100%);
+}
+.nav-fade {
+  background: linear-gradient(180deg, rgba(10, 10, 10, 0) 0%, #0a0a0a 60%);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.toast-in {
+  animation: toast-in 180ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-in {
+    animation: none;
+  }
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+:focus-visible {
+  outline: 2px solid #ffb38f;
+  outline-offset: 2px;
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "752623719551",
+    "project_id": "onlybudget-21223",
+    "storage_bucket": "onlybudget-21223.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:752623719551:android:d41f205a9ad5364e1fdb4a",
+        "android_client_info": {
+          "package_name": "com.onlybudget.onlybudget_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyABbtPQkMaWZdjBdD36MVRWhybp720tq2Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

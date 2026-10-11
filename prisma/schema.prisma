@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ASSOCIE
+  CHATTEUR
+}
+
+enum FeeType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role
+  avatarUrl          String?
+  profitSharePercent Float? // only meaningful when role = ASSOCIE
+  mustChangePassword Boolean  @default(false)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ownedWallets     Wallet[]
+  gainsAsChatter   Gain[]     @relation("GainChatter")
+  gainsCreated     Gain[]     @relation("GainCreatedBy")
+  expensesCreated  Expense[]
+  transfersCreated Transfer[]
+  auditLogs        AuditLog[]
+
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
+  fcmTokens         FcmToken[]
+}
+
+/// Administrative actions worth an audit trail (config edits, deletions of transactions...).
+/// Creation of gains/expenses/transfers is NOT logged here: those tables are their own history.
+model AuditLog {
+  id            String   @id @default(cuid())
+  action        String // machine key, e.g. "currency.rate_updated"
+  entityType    String // "Currency" | "Wallet" | "WalletRoute" | "ExpenseCategory" | "User" | "Gain" | "Expense" | "System" (data.reset: no single entity)
+  entityId      String?
+  summary       String // French. 1st line: verb phrase read after the performer's name ("a modifié le taux EUR"); optional 2nd line: details ("4 985 → 5 000 Ar")
+  performedById String
+  createdAt     DateTime @default(now())
+
+  performedBy User @relation(fields: [performedById], references: [id])
+
+  @@index([createdAt])
+}
+
+model Currency {
+  code       String   @id // "EUR" | "USD" | "MGA"
+  symbol     String
+  name       String
+  rateToBase Float    @default(1) // 1 unit of this currency = rateToBase units of the base currency (MGA)
+  isBase     Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  wallets       Wallet[]
+  gains         Gain[]
+  expenses      Expense[]
+  transfersFrom Transfer[] @relation("TransferFromCurrency")
+  transfersTo   Transfer[] @relation("TransferToCurrency")
+}
+
+model Wallet {
+  id           String   @id @default(cuid())
+  name         String
+  icon         String? // key into the bundled icon registry
+  logoUrl      String? // /uploads/... custom image, overrides icon when set
+  currencyCode String
+  ownerId      String? // optional: wallet tied to one associate (e.g. a personal Mvola account)
+  balanceMinor BigInt   @default(0) // integer minor units (cents), see lib/currency.ts
+  isSource     Boolean  @default(false) // can a chatter log a gain directly into this wallet?
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  /// Percentage the platform keeps on every gain entered on this wallet (15 for Wysper): only the rest counts as our gain.
+  commissionPercent Float @default(0)
+
+  currency Currency @relation(fields: [currencyCode], references: [code])
+  owner    User?    @relation(fields: [ownerId], references: [id])
+
+  gains         Gain[]
+  expenses      Expense[]
+  routesFrom    WalletRoute[] @relation("RouteFrom")
+  routesTo      WalletRoute[] @relation("RouteTo")
+  transfersFrom Transfer[]    @relation("TransferFrom")
+  transfersTo   Transfer[]    @relation("TransferTo")
+
+  @@index([currencyCode])
+  @@index([ownerId])
+}
+
+model WalletRoute {
+  id            String   @id @default(cuid())
+  fromWalletId  String
+  toWalletId    String
+  feeType       FeeType  @default(NONE)
+  feePercent    Float? // used when feeType = PERCENT, e.g. 2.5 means 2.5%
+  feeFixedMinor BigInt? // used when feeType = FIXED, minor units in fromWallet's currency
+  archived      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  fromWallet Wallet @relation("RouteFrom", fields: [fromWalletId], references: [id])
+  toWallet   Wallet @relation("RouteTo", fields: [toWalletId], references: [id])
+
+  @@unique([fromWalletId, toWalletId])
+}
+
+model ExpenseCategory {
+  id       String  @id @default(cuid())
+  name     String
+  icon     String
+  logoUrl  String?
+  archived Boolean @default(false)
+
+  expenses Expense[]
+}
+
+model Gain {
+  id           String   @id @default(cuid())
+  chatterId    String
+  walletId     String
+  amountMinor  BigInt // integer minor units, in currencyCode. NET of the wallet's commission: this is what counts everywhere (totals, balances, profit)
+  currencyCode String // always mirrors wallet.currencyCode, set server-side (relabelled with the wallet when its currency is changed)
+  date         DateTime @default(now())
+  note         String?
+  createdById  String // the associate who logged it on behalf of a chatter, or the chatter themself
+  createdAt    DateTime @default(now())
+
+  grossAmountMinor  BigInt? // amount as typed, before the commission (null for gains recorded before commissions existed)
+  commissionPercent Float? // commission rate applied to this gain, kept even if the wallet's rate changes later
+
+  chatter   User     @relation("GainChatter", fields: [chatterId], references: [id])
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
+  currency  Currency @relation(fields: [currencyCode], references: [code])
+  createdBy User     @relation("GainCreatedBy", fields: [createdById], references: [id])
+
+  @@index([chatterId, date])
+  @@index([date])
+  @@index([walletId])
+}
+
+model Expense {
+  id           String   @id @default(cuid())
+  categoryId   String
+  walletId     String
+  amountMinor  BigInt
+  currencyCode String // mirrors wallet.currencyCode, set server-side
+  date         DateTime @default(now())
+  note         String?
+  createdById  String
+  createdAt    DateTime @default(now())
+
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
+  wallet    Wallet          @relation(fields: [walletId], references: [id])
+  currency  Currency        @relation(fields: [currencyCode], references: [code])
+  createdBy User            @relation(fields: [createdById], references: [id])
+
+  @@index([date])
+  @@index([walletId])
+  @@index([categoryId])
+}
+
+model Transfer {
+  id                  String   @id @default(cuid())
+  fromWalletId        String
+  toWalletId          String
+  fromCurrencyCode    String // = fromWallet.currencyCode at time of transfer
+  toCurrencyCode      String // = toWallet.currencyCode at time of transfer
+  amountSentMinor     BigInt // in fromCurrency
+  feeAmountMinor      BigInt   @default(0) // in fromCurrency, deducted before conversion
+  exchangeRateUsed    Float? // fromCurrency -> toCurrency rate applied; null if same currency
+  amountReceivedMinor BigInt // in toCurrency
+  date                DateTime @default(now())
+  note                String?
+  createdById         String
+  createdAt           DateTime @default(now())
+
+  fromWallet   Wallet   @relation("TransferFrom", fields: [fromWalletId], references: [id])
+  toWallet     Wallet   @relation("TransferTo", fields: [toWalletId], references: [id])
+  fromCurrency Currency @relation("TransferFromCurrency", fields: [fromCurrencyCode], references: [code])
+  toCurrency   Currency @relation("TransferToCurrency", fields: [toCurrencyCode], references: [code])
+  createdBy    User     @relation(fields: [createdById], references: [id])
+
+  @@index([date])
+  @@index([fromWalletId])
+  @@index([toWalletId])
+}
+
+/// In-app notification for one recipient (created when someone else adds, edits or deletes something).
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String // recipient
+  kind      String // machine key, e.g. "gain.created"
+  title     String
+  body      String
+  url       String? // page to open when clicked
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// One browser/device that agreed to receive system (push) notifications.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// One mobile device (Flutter app) registered for Firebase Cloud Messaging push — the Android equivalent of
+/// PushSubscription, which is web-only (VAPID/Web Push protocol, not an FCM token).
+model FcmToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
