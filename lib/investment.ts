@@ -15,7 +15,7 @@ export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
   ACTIONS: "Actions",
   CRYPTO: "Crypto",
   IMMOBILIER: "Immobilier / terrain",
-  BUSINESS: "Business / agence",
+  BUSINESS: "Business OFM (matériel, outils)",
   AUTRE: "Autre",
 };
 
@@ -44,7 +44,7 @@ export const PROFILE_RULES: Record<RiskProfile, ProfileRules> = {
     allocation: [
       { type: "EPARGNE", percent: 50, why: "Disponible à tout moment, sans risque de perte." },
       { type: "ETF", percent: 30, why: "Des centaines d'entreprises d'un coup : le risque est réparti." },
-      { type: "BUSINESS", percent: 15, why: "Outils ou chatteurs qui font grandir l'agence." },
+      { type: "BUSINESS", percent: 15, why: "iPhones, outils (GeeLark, ComfyUI...) ou chatteurs qui font grandir l'agence." },
       { type: "CRYPTO", percent: 5, why: "Une petite part seulement : ça peut perdre 50 % vite." },
     ],
   },
@@ -55,7 +55,7 @@ export const PROFILE_RULES: Record<RiskProfile, ProfileRules> = {
     allocation: [
       { type: "ETF", percent: 40, why: "La base d'un portefeuille qui grandit sur le long terme." },
       { type: "EPARGNE", percent: 30, why: "Pour les imprévus et les occasions." },
-      { type: "BUSINESS", percent: 20, why: "Ce que vous maîtrisez le mieux : votre propre agence." },
+      { type: "BUSINESS", percent: 20, why: "Ce que vous maîtrisez le mieux : iPhones, outils, chatteurs pour l'OFM." },
       { type: "CRYPTO", percent: 10, why: "Du potentiel, mais très volatil : jamais plus que ça." },
     ],
   },
@@ -65,7 +65,7 @@ export const PROFILE_RULES: Record<RiskProfile, ProfileRules> = {
     maxCryptoShare: 0.2,
     allocation: [
       { type: "ETF", percent: 45, why: "Le moteur de croissance principal, à garder des années." },
-      { type: "BUSINESS", percent: 25, why: "Réinvestir dans l'agence rapporte souvent le plus." },
+      { type: "BUSINESS", percent: 25, why: "Réinvestir dans l'OFM (matériel, outils, chatteurs) rapporte souvent le plus." },
       { type: "CRYPTO", percent: 15, why: "Pour viser plus haut, en acceptant de fortes baisses." },
       { type: "EPARGNE", percent: 15, why: "Un coussin, même quand on prend des risques." },
     ],

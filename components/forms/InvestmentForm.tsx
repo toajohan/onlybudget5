@@ -68,7 +68,7 @@ export function InvestmentForm({ investment, onSuccess }: { investment?: Editabl
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div>
         <Label>Nom</Label>
-        <Input placeholder="Ex: Bitcoin, ETF S&P 500, terrain à Ivato..." {...register("name")} />
+        <Input placeholder="Ex: iPhone 13 pour l'OFM, Bitcoin, ETF S&P 500..." {...register("name")} />
         <FormError message={errors.name?.message} />
       </div>
 
