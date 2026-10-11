@@ -4,25 +4,31 @@ import { callOnlyChat, OnlyChatError } from "@/lib/onlychat";
 
 type Creator = { id: string; name: string; platform: "onlyfans" | "telegram" };
 
-/** Finds the list of creators in list_creators' answer, whatever it is wrapped in. */
+const PLATFORMS = ["onlyfans", "telegram"] as const;
+type Platform = (typeof PLATFORMS)[number];
+const isPlatform = (v: unknown): v is Platform => PLATFORMS.includes(v as Platform);
+
+/**
+ * Finds the creators in list_creators' answer, e.g. { creators: { telegram: { data: [...] }, onlyfans: {...} } }.
+ * The platform is either a field of each creator or the key the list sits under.
+ */
 function extractCreators(result: unknown): Creator[] {
-  const lists: unknown[] = [];
-  const visit = (value: unknown, depth: number) => {
-    if (depth > 3 || value === null || typeof value !== "object") return;
-    if (Array.isArray(value)) lists.push(value);
-    else Object.values(value).forEach((v) => visit(v, depth + 1));
-  };
-  visit(result, 0);
   const creators: Creator[] = [];
-  for (const list of lists as Array<Array<Record<string, unknown>>>) {
-    for (const item of list) {
-      const id = item?.id ?? item?.creatorId;
-      const platform = item?.platform;
-      if (typeof id === "string" && (platform === "onlyfans" || platform === "telegram")) {
-        creators.push({ id, platform, name: String(item.name ?? item.displayName ?? item.username ?? id) });
+  const visit = (value: unknown, platform: Platform | null, depth: number) => {
+    if (depth > 5 || value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const item of value as Array<Record<string, unknown>>) {
+        const id = item?.id ?? item?.creatorId;
+        const itemPlatform = isPlatform(item?.platform) ? item.platform : platform;
+        if (typeof id === "string" && itemPlatform) {
+          creators.push({ id, platform: itemPlatform, name: String(item.name ?? item.displayName ?? item.username ?? id) });
+        }
       }
+      return;
     }
-  }
+    for (const [key, v] of Object.entries(value)) visit(v, isPlatform(key) ? key : platform, depth + 1);
+  };
+  visit(result, null, 0);
   return creators;
 }
 

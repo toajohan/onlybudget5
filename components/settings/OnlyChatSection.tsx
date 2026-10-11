@@ -132,7 +132,7 @@ export function OnlyChatSection({ url, hasKey }: { url: string | null; hasKey: b
           <details className="rounded-2xl bg-tile px-4 py-3 text-xs text-muted">
             <summary className="cursor-pointer text-foreground">Détails techniques (à envoyer à Claude)</summary>
             <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all">
-              {JSON.stringify({ creators: result.raw, stats: result.stats }, null, 2).slice(0, 6000)}
+              {JSON.stringify({ stats: result.stats, creators: result.raw }, null, 2).slice(0, 6000)}
             </pre>
           </details>
         </div>
