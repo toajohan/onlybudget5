@@ -138,7 +138,9 @@ export function NotificationsProvider({ vapidPublicKey, children }: { vapidPubli
     let cancelled = false;
     (async () => {
       let state: PushState;
-      if (!vapidPublicKey) state = "unconfigured";
+      // The Android app shows its own native notifications (FCM), whatever the WebView supports for web push.
+      if (isNativeApp()) state = "on";
+      else if (!vapidPublicKey) state = "unconfigured";
       else if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) state = "unsupported";
       else if (Notification.permission === "denied") state = "denied";
       else {
@@ -283,6 +285,11 @@ export function NotificationsProvider({ vapidPublicKey, children }: { vapidPubli
   );
 }
 
+/** The Android app's WebView appends this marker to its user agent. */
+function isNativeApp(): boolean {
+  return typeof navigator !== "undefined" && navigator.userAgent.includes("OnlyBudgetApp");
+}
+
 function PushSettings({
   state,
   busy,
@@ -320,9 +327,11 @@ function PushSettings({
           <Button size="sm" variant="secondary" loading={busy} onClick={onTest}>
             Envoyer un test
           </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onDisable}>
-            Désactiver
-          </Button>
+          {!isNativeApp() && (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onDisable}>
+              Désactiver
+            </Button>
+          )}
         </div>
       </div>
     );

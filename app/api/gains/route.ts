@@ -75,12 +75,13 @@ export async function POST(request: Request) {
     {
       actor: user,
       kind: "gain.created",
-      title: "Nouveau gain",
+      title: `🤑 +${money(netMinor)} sur ${wallet.name}`,
       body:
-        `${user.name} a ajouté un gain de ${money(netMinor)} sur ${wallet.name}` +
-        (forSomeoneElse ? ` pour ${chatter.name}` : "") +
-        (commissionMinor > 0 ? ` (${money(grossMinor)} − ${formatNumberFr(percent)} % de commission)` : ""),
+        `${chatter.name} vient d'encaisser ${money(netMinor)} 💸` +
+        (forSomeoneElse ? ` (ajouté par ${user.name})` : "") +
+        (commissionMinor > 0 ? ` · ${money(grossMinor)} − ${formatNumberFr(percent)} % de commission` : ""),
       url: "/gains",
+      imageUrl: wallet.logoUrl,
       alsoUserIds: [chatter.id],
     },
   ]);

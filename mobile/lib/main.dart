@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'services/api_client.dart';
-import 'services/data_service.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'services/push_service.dart';
 import 'theme.dart';
 
@@ -59,9 +57,9 @@ const String _hideScrollbarCss = '''
 class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _loading = true;
+  bool _firstLoadDone = false;
   String? _error;
   Timer? _loadTimeout;
-  bool _testingPush = false;
 
   @override
   void initState() {
@@ -75,7 +73,10 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
           // Explicit, rather than relying on the default: every navigation (including the site's own client-side
           // page-to-page links) is allowed to proceed inside this WebView.
           onNavigationRequest: (request) => NavigationDecision.navigate,
+          // Only the very first load gets the full-screen spinner: later full-page loads keep the current page
+          // visible while the next one arrives, like a normal browser, instead of hiding it behind a black screen.
           onPageStarted: (_) {
+            if (_firstLoadDone) return;
             setState(() {
               _error = null;
               _loading = true;
@@ -84,9 +85,12 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
           },
           onPageFinished: (_) {
             _loadTimeout?.cancel();
-            setState(() => _loading = false);
+            setState(() {
+              _loading = false;
+              _firstLoadDone = true;
+            });
             _controller.runJavaScript(_hideScrollbarCss);
-            _syncSessionFromWebView();
+            PushService.instance.refresh();
           },
           onWebResourceError: (error) {
             // Only the main frame failing (not a sub-resource, e.g. an ad/font blocked) is worth a retry screen.
@@ -99,9 +103,17 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
             }
           },
         ),
-      )
-      ..loadRequest(Uri.parse(siteUrl));
+      );
+    _loadSite();
     PushService.instance.startForegroundPolling();
+  }
+
+  /// Marks the WebView as the app, so the site shows its notification settings (and test button) for the phone's
+  /// native notifications instead of the browser's web push.
+  Future<void> _loadSite() async {
+    final userAgent = await _controller.getUserAgent();
+    await _controller.setUserAgent('${userAgent ?? ''} OnlyBudgetApp'.trim());
+    await _controller.loadRequest(Uri.parse(siteUrl));
   }
 
   /// The site itself is a client-side-routed app (Next.js): switching pages after the first load does NOT always
@@ -127,22 +139,6 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     return "Impossible de charger OnlyBudget. Vérifiez votre connexion.";
   }
 
-  /// After every page load, peeks at the WebView's own cookie jar: if the site just signed the user in, grab the
-  /// session cookie so this app's own background checks (polling, FCM registration) know who's logged in too.
-  Future<void> _syncSessionFromWebView() async {
-    try {
-      final raw = await _controller.runJavaScriptReturningResult('document.cookie');
-      final cookieStr = raw is String ? (raw.startsWith('"') ? jsonDecode(raw) as String : raw) : raw.toString();
-      final match = RegExp(r'session=[^;]+').firstMatch(cookieStr);
-      if (match != null) {
-        await ApiClient.instance.setRawCookie(match.group(0)!);
-        PushService.instance.registerDevice();
-      }
-    } catch (_) {
-      // Best-effort: worst case, push registration waits for the next page load.
-    }
-  }
-
   @override
   void dispose() {
     _loadTimeout?.cancel();
@@ -155,8 +151,23 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       PushService.instance.startForegroundPolling();
+      _reloadIfPageLost();
     } else if (state == AppLifecycleState.paused) {
       PushService.instance.stopForegroundPolling();
+    }
+  }
+
+  /// Android may discard the page while the app sits in the background; coming back to an empty or unresponsive
+  /// page reloads it instead of leaving a black screen.
+  Future<void> _reloadIfPageLost() async {
+    if (_error != null || !_firstLoadDone) return;
+    try {
+      final count = await _controller
+          .runJavaScriptReturningResult('document.body ? document.body.childElementCount : 0')
+          .timeout(const Duration(seconds: 3));
+      if (count.toString() == '0') _controller.reload();
+    } catch (_) {
+      _controller.reload();
     }
   }
 
@@ -168,31 +179,17 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     _controller.reload();
   }
 
-  /// Bypasses the site's own "Activer les notifications" UI entirely (it tracks browser-native Push API support,
-  /// which an embedded WebView may not reliably expose) and tests this phone's native FCM registration directly.
-  Future<void> _sendTestPush() async {
-    setState(() => _testingPush = true);
-    String message = "Test envoyé — vous devriez recevoir une notification avec le son dans quelques secondes.";
-    bool isError = false;
-    try {
-      await DataService.instance.sendTestPush();
-    } on ApiException catch (e) {
-      isError = true;
-      message = e.statusCode == 401 || e.statusCode == 307
-          ? "Connectez-vous d'abord dans l'application, puis réessayez."
-          : e.message;
-    } catch (_) {
-      isError = true;
-      message = "Échec de l'envoi du test — vérifiez votre connexion.";
+  /// Real Hybrid Composition (the native WebView placed directly on screen) rather than the plugin's default
+  /// texture mode, which on some phones leaves the page black after returning to the app or stops repainting it
+  /// after a page change.
+  Widget _webView() {
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      return WebViewWidget.fromPlatformCreationParams(
+        params: AndroidWebViewWidgetCreationParams(controller: platform, displayWithHybridComposition: true),
+      );
     }
-    if (!mounted) return;
-    setState(() => _testingPush = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? const Color(0xFFFF8A5B) : const Color(0xFF1C1C1C),
-      ),
-    );
+    return WebViewWidget(controller: _controller);
   }
 
   @override
@@ -212,33 +209,8 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
         body: SafeArea(
           child: Stack(
             children: [
-              WebViewWidget(controller: _controller),
+              _webView(),
               if (_loading) const Center(child: CircularProgressIndicator(color: AppColors.foreground)),
-              // Small, deliberately out-of-the-way diagnostic control — not part of the site itself. Tests this
-              // phone's real notification (push + cash sound) directly, without depending on the site's own
-              // "Activer les notifications" button (which may not detect push support correctly inside a WebView).
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _testingPush ? null : _sendTestPush,
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: _testingPush
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
-                            )
-                          : const Icon(Icons.notifications_active_outlined, size: 18, color: Colors.white70),
-                    ),
-                  ),
-                ),
-              ),
               if (_error != null)
                 Container(
                   color: AppColors.background,

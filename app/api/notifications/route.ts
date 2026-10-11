@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       title: n.title,
       body: n.body,
       url: n.url,
+      imageUrl: n.imageUrl,
       createdAt: n.createdAt.toISOString(),
       read: n.readAt !== null,
     })),

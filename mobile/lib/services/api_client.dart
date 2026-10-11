@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -18,6 +19,7 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
 
   static const String baseUrl = 'https://onlybudget-app.vercel.app';
+  static const _cookieChannel = MethodChannel('onlybudget/cookies');
 
   final _storage = const FlutterSecureStorage();
   static const _cookieKey = 'onlybudget_session_cookie';
@@ -29,9 +31,28 @@ class ApiClient {
   void Function()? onUnauthorized;
 
   Future<void> _ensureLoaded() async {
-    if (_loaded) return;
-    _cookie = await _storage.read(key: _cookieKey);
-    _loaded = true;
+    if (!_loaded) {
+      _cookie = await _storage.read(key: _cookieKey);
+      _loaded = true;
+    }
+    await _syncFromWebView();
+  }
+
+  /// The WebView's cookie store is the source of truth for who's signed in (the user logs in and out on the real
+  /// site). Only reachable from the main isolate: background isolates (FCM, WorkManager) keep the stored copy.
+  Future<void> _syncFromWebView() async {
+    String? raw;
+    try {
+      raw = await _cookieChannel.invokeMethod<String>('get', {'url': baseUrl});
+    } catch (_) {
+      return;
+    }
+    final match = raw == null ? null : RegExp(r'(?:^|;\s*)(session=[^;]+)').firstMatch(raw);
+    if (match != null) {
+      await setRawCookie(match.group(1)!);
+    } else if (_cookie != null) {
+      await clearSession();
+    }
   }
 
   Future<bool> hasSession() async {
@@ -47,11 +68,8 @@ class ApiClient {
     await setRawCookie(match.group(0)!);
   }
 
-  /// Lets the WebView shell hand over the `session=...` cookie it sees in `document.cookie` once the real site
-  /// (rendered inside the WebView) signs the user in — that's how this API client learns who's logged in without
-  /// its own login form. No-ops if the value is unchanged (avoids a storage write on every page load).
+  /// No-ops if the value is unchanged (avoids a storage write on every check).
   Future<void> setRawCookie(String sessionCookiePair) async {
-    await _ensureLoaded();
     if (_cookie == sessionCookiePair) return;
     _cookie = sessionCookiePair;
     await _storage.write(key: _cookieKey, value: _cookie);

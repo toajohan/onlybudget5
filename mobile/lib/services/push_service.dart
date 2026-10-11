@@ -3,13 +3,16 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import '../models.dart';
 import 'api_client.dart';
 import 'data_service.dart';
 
-const String _channelId = 'onlybudget_activity';
+// Android fixes a channel's sound once created, so changing the sound means a new channel id; older ones are deleted.
+const String _channelId = 'onlybudget_activity_v3';
+const List<String> _legacyChannelIds = ['onlybudget_activity', 'onlybudget_activity_v2'];
 const String _backgroundTask = 'onlybudget_check_notifications';
 
 final _plugin = FlutterLocalNotificationsPlugin();
@@ -23,7 +26,25 @@ Future<void> _ensureChannel() async {
     sound: RawResourceAndroidNotificationSound('cash_register'),
     playSound: true,
   );
-  await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
+  final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  for (final id in _legacyChannelIds) {
+    await android?.deleteNotificationChannel(id);
+  }
+  await android?.createNotificationChannel(channel);
+}
+
+/// The platform's logo (e.g. OnlyChat) as the notification's picture. Best-effort: SVGs can't be decoded by
+/// Android, and a slow or failed download just means the app icon is shown instead.
+Future<AndroidBitmap<Object>?> _largeIcon(String? url) async {
+  if (url == null || url.isEmpty || url.toLowerCase().endsWith('.svg')) return null;
+  try {
+    final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
+    final type = res.headers['content-type'] ?? '';
+    if (res.statusCode != 200 || !type.startsWith('image/') || type.contains('svg')) return null;
+    return ByteArrayAndroidBitmap(res.bodyBytes);
+  } catch (_) {
+    return null;
+  }
 }
 
 Future<void> _showNotification(AppNotification n) async {
@@ -31,16 +52,18 @@ Future<void> _showNotification(AppNotification n) async {
     n.id.hashCode,
     n.title,
     n.body,
-    const NotificationDetails(
+    NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         'Activité OnlyBudget',
         channelDescription: 'Nouvelles ventes, dépenses et modifications de l\'agence.',
         importance: Importance.max,
         priority: Priority.high,
-        sound: RawResourceAndroidNotificationSound('cash_register'),
+        sound: const RawResourceAndroidNotificationSound('cash_register'),
         playSound: true,
         category: AndroidNotificationCategory.message,
+        largeIcon: await _largeIcon(n.imageUrl),
+        styleInformation: BigTextStyleInformation(n.body),
       ),
     ),
   );
@@ -58,6 +81,23 @@ Future<void> _checkAndNotify() async {
     await _showNotification(n);
   }
   await DataService.instance.markNotificationsRead(ids: unread.map((n) => n.id).toList());
+}
+
+/// A test push carries no activity item (nothing new in /api/notifications), so its own payload is shown as-is.
+Future<void> _handleMessage(RemoteMessage message) async {
+  if (message.data['tag'] == 'test') {
+    await _showNotification(AppNotification(
+      id: 'test-${DateTime.now().millisecondsSinceEpoch}',
+      kind: 'test',
+      title: message.data['title'] ?? 'OnlyBudget',
+      body: message.data['body'] ?? '',
+      imageUrl: message.data['imageUrl'],
+      createdAt: DateTime.now(),
+      read: false,
+    ));
+    return;
+  }
+  await _checkAndNotify();
 }
 
 /// WorkManager's own isolate entry point (~15 min minimum interval on Android) — a redundant safety net under FCM,
@@ -83,7 +123,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     if (Firebase.apps.isEmpty) await Firebase.initializeApp();
     await _ensureChannel();
-    await _checkAndNotify();
+    await _handleMessage(message);
   } catch (e) {
     if (kDebugMode) print('FCM background handler failed: $e');
   }
@@ -96,6 +136,7 @@ class PushService {
   Timer? _foregroundTimer;
   StreamSubscription<String>? _onTokenRefreshSub;
   bool _initialized = false;
+  bool _registered = false;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -111,7 +152,7 @@ class PushService {
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     // Fire-and-forget: PushService is a permanent singleton (lives as long as the app does), so these never need cancelling.
-    FirebaseMessaging.onMessage.listen((_) => _checkAndNotify());
+    FirebaseMessaging.onMessage.listen(_handleMessage);
     FirebaseMessaging.onMessageOpenedApp.listen((_) => _checkAndNotify());
 
     try {
@@ -131,11 +172,15 @@ class PushService {
   /// Call right after a successful login: registers this device's FCM token with the backend (so FCM pushes can
   /// reach it) and keeps it updated if Firebase rotates the token later.
   Future<void> registerDevice() async {
+    if (_registered) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await DataService.instance.registerFcmToken(token);
+      if (token == null) return;
+      await DataService.instance.registerFcmToken(token);
+      _registered = true;
     } catch (e) {
       if (kDebugMode) print('FCM token registration failed: $e');
+      return;
     }
     _onTokenRefreshSub?.cancel();
     _onTokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
@@ -158,24 +203,26 @@ class PushService {
   /// (and catching anything FCM might have missed).
   void startForegroundPolling() {
     _foregroundTimer?.cancel();
-    _checkAndNotify();
-    _foregroundTimer = Timer.periodic(const Duration(seconds: 30), (_) => _checkAndNotify());
+    refresh();
+    _foregroundTimer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+  }
+
+  /// Picks up a sign-in on the site (registering this phone for pushes) and shows anything new. Never throws.
+  Future<void> refresh() async {
+    try {
+      if (!await ApiClient.instance.hasSession()) {
+        _registered = false;
+        return;
+      }
+      await registerDevice();
+      await _checkAndNotify();
+    } catch (e) {
+      if (kDebugMode) print('notification refresh failed: $e');
+    }
   }
 
   void stopForegroundPolling() {
     _foregroundTimer?.cancel();
     _foregroundTimer = null;
-  }
-
-  /// "Envoyer un test" button: fires the exact same real notification + sound as a genuine new activity item.
-  Future<void> sendTestNotification() async {
-    await _showNotification(AppNotification(
-      id: 'test-${DateTime.now().millisecondsSinceEpoch}',
-      kind: 'test',
-      title: 'Test OnlyBudget',
-      body: 'Ceci est un test : vous recevrez cette notification (avec le son) pour chaque nouvelle vente.',
-      createdAt: DateTime.now(),
-      read: false,
-    ));
   }
 }

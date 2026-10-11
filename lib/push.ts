@@ -2,7 +2,7 @@ import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
 import { fcmIsConfigured, messaging } from "@/lib/firebase-admin";
 
-export type PushPayload = { title: string; body: string; url?: string; tag?: string };
+export type PushPayload = { title: string; body: string; url?: string; tag?: string; imageUrl?: string };
 
 let vapidConfigured: boolean | null = null;
 
@@ -73,7 +73,13 @@ async function sendFcmPush(userIds: string[], payload: PushPayload): Promise<{ s
     const tokens = await prisma.fcmToken.findMany({ where: { userId: { in: userIds } } });
     if (tokens.length === 0) return { sent: 0, removed: 0 };
 
-    const data = { title: payload.title, body: payload.body, url: payload.url ?? "", tag: payload.tag ?? "activity" };
+    const data = {
+      title: payload.title,
+      body: payload.body,
+      url: payload.url ?? "",
+      tag: payload.tag ?? "activity",
+      imageUrl: payload.imageUrl ?? "",
+    };
     const results = await Promise.allSettled(
       tokens.map((t) => messaging().send({ token: t.token, data, android: { priority: "high" as const } }))
     );
