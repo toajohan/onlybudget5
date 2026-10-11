@@ -30,7 +30,13 @@ async function sendWebPush(userIds: string[], payload: PushPayload): Promise<{ s
   try {
     if (!pushIsConfigured()) return { sent: 0, removed: 0 };
 
-    const subscriptions = await prisma.pushSubscription.findMany({ where: { userId: { in: userIds } } });
+    const [allSubscriptions, appUsers] = await Promise.all([
+      prisma.pushSubscription.findMany({ where: { userId: { in: userIds } } }),
+      prisma.fcmToken.findMany({ where: { userId: { in: userIds } }, select: { userId: true }, distinct: ["userId"] }),
+    ]);
+    // Someone with the Android app gets its native notification: their Android browser would only duplicate it.
+    const hasApp = new Set(appUsers.map((t) => t.userId));
+    const subscriptions = allSubscriptions.filter((s) => !(hasApp.has(s.userId) && /Android/i.test(s.userAgent ?? "")));
     if (subscriptions.length === 0) return { sent: 0, removed: 0 };
 
     const body = JSON.stringify(payload);
