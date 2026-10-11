@@ -195,6 +195,7 @@ class AppNotification {
   final String title;
   final String body;
   final String? url;
+  final String? imageUrl;
   final DateTime createdAt;
   final bool read;
 
@@ -204,6 +205,7 @@ class AppNotification {
     required this.title,
     required this.body,
     this.url,
+    this.imageUrl,
     required this.createdAt,
     required this.read,
   });
@@ -214,6 +216,7 @@ class AppNotification {
         title: j['title'],
         body: j['body'],
         url: j['url'],
+        imageUrl: j['imageUrl'],
         createdAt: DateTime.parse(j['createdAt']),
         read: j['read'] ?? false,
       );

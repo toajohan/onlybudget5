@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:workmanager/workmanager.dart';
 import '../models.dart';
@@ -32,21 +33,37 @@ Future<void> _ensureChannel() async {
   await android?.createNotificationChannel(channel);
 }
 
+/// The platform's logo (e.g. OnlyChat) as the notification's picture. Best-effort: SVGs can't be decoded by
+/// Android, and a slow or failed download just means the app icon is shown instead.
+Future<AndroidBitmap<Object>?> _largeIcon(String? url) async {
+  if (url == null || url.isEmpty || url.toLowerCase().endsWith('.svg')) return null;
+  try {
+    final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
+    final type = res.headers['content-type'] ?? '';
+    if (res.statusCode != 200 || !type.startsWith('image/') || type.contains('svg')) return null;
+    return ByteArrayAndroidBitmap(res.bodyBytes);
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<void> _showNotification(AppNotification n) async {
   await _plugin.show(
     n.id.hashCode,
     n.title,
     n.body,
-    const NotificationDetails(
+    NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         'Activité OnlyBudget',
         channelDescription: 'Nouvelles ventes, dépenses et modifications de l\'agence.',
         importance: Importance.max,
         priority: Priority.high,
-        sound: RawResourceAndroidNotificationSound('cash_register'),
+        sound: const RawResourceAndroidNotificationSound('cash_register'),
         playSound: true,
         category: AndroidNotificationCategory.message,
+        largeIcon: await _largeIcon(n.imageUrl),
+        styleInformation: BigTextStyleInformation(n.body),
       ),
     ),
   );
@@ -74,6 +91,7 @@ Future<void> _handleMessage(RemoteMessage message) async {
       kind: 'test',
       title: message.data['title'] ?? 'OnlyBudget',
       body: message.data['body'] ?? '',
+      imageUrl: message.data['imageUrl'],
       createdAt: DateTime.now(),
       read: false,
     ));
@@ -206,17 +224,5 @@ class PushService {
   void stopForegroundPolling() {
     _foregroundTimer?.cancel();
     _foregroundTimer = null;
-  }
-
-  /// "Envoyer un test" button: fires the exact same real notification + sound as a genuine new activity item.
-  Future<void> sendTestNotification() async {
-    await _showNotification(AppNotification(
-      id: 'test-${DateTime.now().millisecondsSinceEpoch}',
-      kind: 'test',
-      title: 'Test OnlyBudget',
-      body: 'Ceci est un test : vous recevrez cette notification (avec le son) pour chaque nouvelle vente.',
-      createdAt: DateTime.now(),
-      read: false,
-    ));
   }
 }

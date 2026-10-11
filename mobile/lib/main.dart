@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'services/api_client.dart';
-import 'services/data_service.dart';
 import 'services/push_service.dart';
 import 'theme.dart';
 
@@ -62,7 +60,6 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   bool _firstLoadDone = false;
   String? _error;
   Timer? _loadTimeout;
-  bool _testingPush = false;
 
   @override
   void initState() {
@@ -106,9 +103,17 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
             }
           },
         ),
-      )
-      ..loadRequest(Uri.parse(siteUrl));
+      );
+    _loadSite();
     PushService.instance.startForegroundPolling();
+  }
+
+  /// Marks the WebView as the app, so the site shows its notification settings (and test button) for the phone's
+  /// native notifications instead of the browser's web push.
+  Future<void> _loadSite() async {
+    final userAgent = await _controller.getUserAgent();
+    await _controller.setUserAgent('${userAgent ?? ''} OnlyBudgetApp'.trim());
+    await _controller.loadRequest(Uri.parse(siteUrl));
   }
 
   /// The site itself is a client-side-routed app (Next.js): switching pages after the first load does NOT always
@@ -174,38 +179,6 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     _controller.reload();
   }
 
-  /// Bypasses the site's own "Activer les notifications" UI entirely (it tracks browser-native Push API support,
-  /// which an embedded WebView may not reliably expose) and tests this phone's native FCM registration directly.
-  Future<void> _sendTestPush() async {
-    setState(() => _testingPush = true);
-    String message = "Test envoyé — vous devriez recevoir une notification avec le son dans quelques secondes.";
-    bool isError = false;
-    try {
-      await PushService.instance.registerDevice();
-      final sent = await DataService.instance.sendTestPush();
-      if (sent == 0) {
-        isError = true;
-        message = "Aucun appareil enregistré pour les notifications. Fermez et rouvrez l'application, puis réessayez.";
-      }
-    } on ApiException catch (e) {
-      isError = true;
-      message = e.statusCode == 401 || e.statusCode == 307
-          ? "Connectez-vous d'abord dans l'application, puis réessayez."
-          : e.message;
-    } catch (_) {
-      isError = true;
-      message = "Échec de l'envoi du test — vérifiez votre connexion.";
-    }
-    if (!mounted) return;
-    setState(() => _testingPush = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? const Color(0xFFFF8A5B) : const Color(0xFF1C1C1C),
-      ),
-    );
-  }
-
   /// Real Hybrid Composition (the native WebView placed directly on screen) rather than the plugin's default
   /// texture mode, which on some phones leaves the page black after returning to the app or stops repainting it
   /// after a page change.
@@ -238,33 +211,6 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
             children: [
               _webView(),
               if (_loading) const Center(child: CircularProgressIndicator(color: AppColors.foreground)),
-              // Small, deliberately out-of-the-way diagnostic control — not part of the site itself. Tests this
-              // phone's real notification (push + cash sound) directly, without depending on the site's own
-              // "Activer les notifications" button (which may not detect push support correctly inside a WebView).
-              // Bottom-right, just above the site's floating tab bar: the top-right corner holds the site's own
-              // bell and menu buttons.
-              Positioned(
-                bottom: 96,
-                right: 8,
-                child: Material(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _testingPush ? null : _sendTestPush,
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: _testingPush
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
-                            )
-                          : const Icon(Icons.notifications_active_outlined, size: 18, color: Colors.white70),
-                    ),
-                  ),
-                ),
-              ),
               if (_error != null)
                 Container(
                   color: AppColors.background,

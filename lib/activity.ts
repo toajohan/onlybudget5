@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auditOp } from "@/lib/audit";
-import { sendPushToUsers } from "@/lib/push";
+import { sendPushToUsers, type PushPayload } from "@/lib/push";
 
 type Actor = { id: string; name: string };
 
@@ -16,6 +16,8 @@ export type ActivityItem = {
   body?: string;
   /** Page opened when the notification is clicked. */
   url?: string;
+  /** Picture shown with the notification, e.g. the platform's logo. */
+  imageUrl?: string | null;
   /** Extra recipients besides the other associates, e.g. the chatter whose gain was edited. */
   alsoUserIds?: Array<string | null | undefined>;
 };
@@ -39,7 +41,7 @@ export async function prepareActivity(items: ActivityItem[]) {
   );
 
   const ops: Operation[] = [];
-  const pushes: Array<{ recipients: string[]; payload: { title: string; body: string; url: string; tag: string } }> = [];
+  const pushes: Array<{ recipients: string[]; payload: PushPayload }> = [];
 
   for (const item of items) {
     if (item.audit) ops.push(auditOp({ ...item.audit, userId: item.actor.id }));
@@ -54,9 +56,10 @@ export async function prepareActivity(items: ActivityItem[]) {
       item.body ??
       (item.audit ? `${item.actor.name} ${item.audit.phrase}${item.audit.details ? ` — ${item.audit.details}` : ""}` : title);
     const url = item.url ?? "/historique";
+    const imageUrl = item.imageUrl ?? undefined;
 
-    ops.push(prisma.notification.createMany({ data: recipients.map((userId) => ({ userId, kind, title, body, url })) }));
-    pushes.push({ recipients, payload: { title, body, url, tag: kind } });
+    ops.push(prisma.notification.createMany({ data: recipients.map((userId) => ({ userId, kind, title, body, url, imageUrl })) }));
+    pushes.push({ recipients, payload: { title, body, url, tag: kind, imageUrl } });
   }
 
   return {

@@ -210,6 +210,7 @@ model Notification {
   title     String
   body      String
   url       String? // page to open when clicked
+  imageUrl  String? // e.g. the platform's logo on a new gain, shown as the notification's picture
   createdAt DateTime  @default(now())
   readAt    DateTime?
 
