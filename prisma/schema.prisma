@@ -278,3 +278,10 @@ model Investment {
 
   @@index([userId])
 }
+
+/// App-wide settings, e.g. the OnlyChat connection. Secret values are stored encrypted (see lib/secret.ts).
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
