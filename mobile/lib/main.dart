@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'services/api_client.dart';
 import 'services/data_service.dart';
 import 'services/push_service.dart';
@@ -58,6 +59,7 @@ const String _hideScrollbarCss = '''
 class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   late final WebViewController _controller;
   bool _loading = true;
+  bool _firstLoadDone = false;
   String? _error;
   Timer? _loadTimeout;
   bool _testingPush = false;
@@ -74,7 +76,10 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
           // Explicit, rather than relying on the default: every navigation (including the site's own client-side
           // page-to-page links) is allowed to proceed inside this WebView.
           onNavigationRequest: (request) => NavigationDecision.navigate,
+          // Only the very first load gets the full-screen spinner: later full-page loads keep the current page
+          // visible while the next one arrives, like a normal browser, instead of hiding it behind a black screen.
           onPageStarted: (_) {
+            if (_firstLoadDone) return;
             setState(() {
               _error = null;
               _loading = true;
@@ -83,7 +88,10 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
           },
           onPageFinished: (_) {
             _loadTimeout?.cancel();
-            setState(() => _loading = false);
+            setState(() {
+              _loading = false;
+              _firstLoadDone = true;
+            });
             _controller.runJavaScript(_hideScrollbarCss);
             PushService.instance.refresh();
           },
@@ -138,8 +146,23 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       PushService.instance.startForegroundPolling();
+      _reloadIfPageLost();
     } else if (state == AppLifecycleState.paused) {
       PushService.instance.stopForegroundPolling();
+    }
+  }
+
+  /// Android may discard the page while the app sits in the background; coming back to an empty or unresponsive
+  /// page reloads it instead of leaving a black screen.
+  Future<void> _reloadIfPageLost() async {
+    if (_error != null || !_firstLoadDone) return;
+    try {
+      final count = await _controller
+          .runJavaScriptReturningResult('document.body ? document.body.childElementCount : 0')
+          .timeout(const Duration(seconds: 3));
+      if (count.toString() == '0') _controller.reload();
+    } catch (_) {
+      _controller.reload();
     }
   }
 
@@ -183,6 +206,19 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     );
   }
 
+  /// Real Hybrid Composition (the native WebView placed directly on screen) rather than the plugin's default
+  /// texture mode, which on some phones leaves the page black after returning to the app or stops repainting it
+  /// after a page change.
+  Widget _webView() {
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      return WebViewWidget.fromPlatformCreationParams(
+        params: AndroidWebViewWidgetCreationParams(controller: platform, displayWithHybridComposition: true),
+      );
+    }
+    return WebViewWidget(controller: _controller);
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -200,7 +236,7 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
         body: SafeArea(
           child: Stack(
             children: [
-              WebViewWidget(controller: _controller),
+              _webView(),
               if (_loading) const Center(child: CircularProgressIndicator(color: AppColors.foreground)),
               // Small, deliberately out-of-the-way diagnostic control — not part of the site itself. Tests this
               // phone's real notification (push + cash sound) directly, without depending on the site's own
