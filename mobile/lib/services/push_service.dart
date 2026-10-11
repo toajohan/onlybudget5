@@ -60,6 +60,22 @@ Future<void> _checkAndNotify() async {
   await DataService.instance.markNotificationsRead(ids: unread.map((n) => n.id).toList());
 }
 
+/// A test push carries no activity item (nothing new in /api/notifications), so its own payload is shown as-is.
+Future<void> _handleMessage(RemoteMessage message) async {
+  if (message.data['tag'] == 'test') {
+    await _showNotification(AppNotification(
+      id: 'test-${DateTime.now().millisecondsSinceEpoch}',
+      kind: 'test',
+      title: message.data['title'] ?? 'OnlyBudget',
+      body: message.data['body'] ?? '',
+      createdAt: DateTime.now(),
+      read: false,
+    ));
+    return;
+  }
+  await _checkAndNotify();
+}
+
 /// WorkManager's own isolate entry point (~15 min minimum interval on Android) — a redundant safety net under FCM,
 /// for the rare case a push is dropped (Doze mode, a flaky connection, a token not refreshed yet).
 @pragma('vm:entry-point')
@@ -83,7 +99,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     if (Firebase.apps.isEmpty) await Firebase.initializeApp();
     await _ensureChannel();
-    await _checkAndNotify();
+    await _handleMessage(message);
   } catch (e) {
     if (kDebugMode) print('FCM background handler failed: $e');
   }
@@ -96,6 +112,7 @@ class PushService {
   Timer? _foregroundTimer;
   StreamSubscription<String>? _onTokenRefreshSub;
   bool _initialized = false;
+  bool _registered = false;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -111,7 +128,7 @@ class PushService {
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     // Fire-and-forget: PushService is a permanent singleton (lives as long as the app does), so these never need cancelling.
-    FirebaseMessaging.onMessage.listen((_) => _checkAndNotify());
+    FirebaseMessaging.onMessage.listen(_handleMessage);
     FirebaseMessaging.onMessageOpenedApp.listen((_) => _checkAndNotify());
 
     try {
@@ -131,11 +148,15 @@ class PushService {
   /// Call right after a successful login: registers this device's FCM token with the backend (so FCM pushes can
   /// reach it) and keeps it updated if Firebase rotates the token later.
   Future<void> registerDevice() async {
+    if (_registered) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
-      if (token != null) await DataService.instance.registerFcmToken(token);
+      if (token == null) return;
+      await DataService.instance.registerFcmToken(token);
+      _registered = true;
     } catch (e) {
       if (kDebugMode) print('FCM token registration failed: $e');
+      return;
     }
     _onTokenRefreshSub?.cancel();
     _onTokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen((token) {
@@ -158,8 +179,22 @@ class PushService {
   /// (and catching anything FCM might have missed).
   void startForegroundPolling() {
     _foregroundTimer?.cancel();
-    _checkAndNotify();
-    _foregroundTimer = Timer.periodic(const Duration(seconds: 30), (_) => _checkAndNotify());
+    refresh();
+    _foregroundTimer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+  }
+
+  /// Picks up a sign-in on the site (registering this phone for pushes) and shows anything new. Never throws.
+  Future<void> refresh() async {
+    try {
+      if (!await ApiClient.instance.hasSession()) {
+        _registered = false;
+        return;
+      }
+      await registerDevice();
+      await _checkAndNotify();
+    } catch (e) {
+      if (kDebugMode) print('notification refresh failed: $e');
+    }
   }
 
   void stopForegroundPolling() {

@@ -125,8 +125,10 @@ class DataService {
   /// POST /api/push/test — fires a real system notification at every device this account has registered (web
   /// push and/or this phone's FCM token), independently of whatever the website's own push-enable UI thinks
   /// (that UI tracks browser-native Push API support, which an embedded WebView may not reliably expose).
-  Future<void> sendTestPush() async {
-    await _api.post('/api/push/test');
+  /// Returns how many devices (this phone and any browsers) the server sent the test to.
+  Future<int> sendTestPush() async {
+    final body = await _api.post('/api/push/test');
+    return (body?['sent'] as num?)?.toInt() ?? 0;
   }
 
   Future<void> registerFcmToken(String token) async {

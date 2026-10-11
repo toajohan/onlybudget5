@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -86,7 +85,7 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
             _loadTimeout?.cancel();
             setState(() => _loading = false);
             _controller.runJavaScript(_hideScrollbarCss);
-            _syncSessionFromWebView();
+            PushService.instance.refresh();
           },
           onWebResourceError: (error) {
             // Only the main frame failing (not a sub-resource, e.g. an ad/font blocked) is worth a retry screen.
@@ -127,22 +126,6 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     return "Impossible de charger OnlyBudget. Vérifiez votre connexion.";
   }
 
-  /// After every page load, peeks at the WebView's own cookie jar: if the site just signed the user in, grab the
-  /// session cookie so this app's own background checks (polling, FCM registration) know who's logged in too.
-  Future<void> _syncSessionFromWebView() async {
-    try {
-      final raw = await _controller.runJavaScriptReturningResult('document.cookie');
-      final cookieStr = raw is String ? (raw.startsWith('"') ? jsonDecode(raw) as String : raw) : raw.toString();
-      final match = RegExp(r'session=[^;]+').firstMatch(cookieStr);
-      if (match != null) {
-        await ApiClient.instance.setRawCookie(match.group(0)!);
-        PushService.instance.registerDevice();
-      }
-    } catch (_) {
-      // Best-effort: worst case, push registration waits for the next page load.
-    }
-  }
-
   @override
   void dispose() {
     _loadTimeout?.cancel();
@@ -175,7 +158,12 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     String message = "Test envoyé — vous devriez recevoir une notification avec le son dans quelques secondes.";
     bool isError = false;
     try {
-      await DataService.instance.sendTestPush();
+      await PushService.instance.refresh();
+      final sent = await DataService.instance.sendTestPush();
+      if (sent == 0) {
+        isError = true;
+        message = "Aucun appareil enregistré pour les notifications. Fermez et rouvrez l'application, puis réessayez.";
+      }
     } on ApiException catch (e) {
       isError = true;
       message = e.statusCode == 401 || e.statusCode == 307
@@ -217,9 +205,11 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
               // Small, deliberately out-of-the-way diagnostic control — not part of the site itself. Tests this
               // phone's real notification (push + cash sound) directly, without depending on the site's own
               // "Activer les notifications" button (which may not detect push support correctly inside a WebView).
+              // Bottom-right, just above the site's floating tab bar: the top-right corner holds the site's own
+              // bell and menu buttons.
               Positioned(
-                top: 10,
-                right: 10,
+                bottom: 96,
+                right: 8,
                 child: Material(
                   color: Colors.black.withValues(alpha: 0.35),
                   shape: const CircleBorder(),
