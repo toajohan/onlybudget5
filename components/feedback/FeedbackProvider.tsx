@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AlertTriangle, Bell, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
+import { haptic } from "@/lib/haptics";
 
 type ToastTone = "success" | "error" | "info";
 export type ToastInput = {
@@ -59,7 +60,9 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const toast = useCallback((input: ToastInput | string) => {
     const t = typeof input === "string" ? { message: input } : input;
     const id = nextId.current++;
-    setToasts((all) => [...all.slice(-(MAX_TOASTS - 1)), { ...t, id, tone: t.tone ?? "success" }]);
+    const tone = t.tone ?? "success";
+    if (tone === "success") haptic("success");
+    setToasts((all) => [...all.slice(-(MAX_TOASTS - 1)), { ...t, id, tone }]);
   }, []);
 
   const confirm = useCallback(
