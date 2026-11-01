@@ -3,6 +3,7 @@ import { vapidPublicKey } from "@/lib/push";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { AppFeel } from "@/components/layout/AppFeel";
 import { FeedbackProvider } from "@/components/feedback/FeedbackProvider";
 import { NotificationsProvider } from "@/components/notifications/NotificationsProvider";
 import { NotificationsPrompt } from "@/components/notifications/NotificationsPrompt";
@@ -13,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <FeedbackProvider>
       <NotificationsProvider vapidPublicKey={vapidPublicKey()}>
+        <AppFeel />
         <div className="app-glow flex min-h-screen">
           <Sidebar role={user.role} name={user.name} avatarUrl={user.avatarUrl} />
           <div className="flex min-w-0 flex-1 flex-col">

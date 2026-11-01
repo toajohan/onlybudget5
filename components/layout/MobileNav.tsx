@@ -16,7 +16,7 @@ export function MobileNav({ role }: { role: Role }) {
       <div aria-hidden="true" className="nav-fade pointer-events-none fixed inset-x-0 bottom-0 z-10 h-28 md:hidden" />
       <nav
         aria-label="Navigation principale"
-        className="fixed inset-x-4 bottom-4 z-20 flex h-[68px] items-center justify-between rounded-full border border-white/10 bg-[#1c1c1c] p-[7px] md:hidden"
+        className="fixed inset-x-4 bottom-4 z-20 flex h-[68px] items-center justify-between rounded-full border border-white/10 bg-[#1c1c1c]/90 p-[7px] shadow-[0_16px_40px_-8px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl md:hidden"
       >
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -29,7 +29,7 @@ export function MobileNav({ role }: { role: Role }) {
               aria-label={active ? undefined : item.label}
               className={cn(
                 "flex h-[52px] items-center justify-center gap-2 rounded-full text-sm font-semibold transition-colors",
-                active ? "bg-white px-4 text-black" : "w-[52px] text-muted hover:text-foreground"
+                active ? "glow-white bg-white px-4 text-black" : "w-[52px] text-muted hover:text-foreground"
               )}
             >
               <Icon className="h-[22px] w-[22px]" />

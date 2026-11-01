@@ -68,6 +68,9 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.background)
+      // Feels like an app, not a web page: no pinch-zoom, and the site sends a light tap haptic on every button.
+      ..enableZoom(false)
+      ..addJavaScriptChannel('OnlyBudgetHaptics', onMessageReceived: _onHaptic)
       ..setNavigationDelegate(
         NavigationDelegate(
           // Explicit, rather than relying on the default: every navigation (including the site's own client-side
@@ -111,9 +114,24 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
   /// Marks the WebView as the app, so the site shows its notification settings (and test button) for the phone's
   /// native notifications instead of the browser's web push.
   Future<void> _loadSite() async {
+    final platform = _controller.platform;
+    if (platform is AndroidWebViewController) {
+      // The phone's font-size setting would otherwise enlarge the whole layout past the screen's width.
+      await platform.setTextZoom(100);
+      await platform.setOverScrollMode(WebViewOverScrollMode.never);
+    }
     final userAgent = await _controller.getUserAgent();
     await _controller.setUserAgent('${userAgent ?? ''} OnlyBudgetApp'.trim());
     await _controller.loadRequest(Uri.parse(siteUrl));
+  }
+
+  void _onHaptic(JavaScriptMessage message) {
+    switch (message.message) {
+      case 'success':
+        HapticFeedback.mediumImpact();
+      default:
+        HapticFeedback.lightImpact();
+    }
   }
 
   /// The site itself is a client-side-routed app (Next.js): switching pages after the first load does NOT always

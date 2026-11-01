@@ -15,7 +15,7 @@ export function StatTile({
   return (
     <div
       className={cn(
-        "rounded-3xl p-4 md:p-5",
+        "depth-tile rounded-3xl p-4 md:p-5",
         tone === "success" ? "tint-success" : tone === "danger" ? "tint-danger" : "bg-tile",
         className
       )}
