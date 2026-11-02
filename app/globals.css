@@ -274,3 +274,26 @@ a:active {
     transform: none;
   }
 }
+
+/* Phones: no visible scrollbars, and long-press doesn't select text (except where you type). */
+@media (pointer: coarse) {
+  html,
+  body {
+    scrollbar-width: none;
+  }
+  ::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

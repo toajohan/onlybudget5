@@ -119,6 +119,8 @@ class _WebShellState extends State<WebShell> with WidgetsBindingObserver {
       // The phone's font-size setting would otherwise enlarge the whole layout past the screen's width.
       await platform.setTextZoom(100);
       await platform.setOverScrollMode(WebViewOverScrollMode.never);
+      await platform.setVerticalScrollBarEnabled(false);
+      await platform.setHorizontalScrollBarEnabled(false);
     }
     final userAgent = await _controller.getUserAgent();
     await _controller.setUserAgent('${userAgent ?? ''} OnlyBudgetApp'.trim());
